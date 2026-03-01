@@ -1,22 +1,16 @@
 import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
 
 // This is a self-contained React component that generates an interactive, kaleidoscopic fractal world.
 // It uses a Ray Marching shader with a technique called "Domain Folding" to create infinite,
 // self-similar structures in real-time, representing a step into pure mathematical art.
 
 export const SymmetryEngine = () => {
-    const mountRef = useRef(null);
+    const mountRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        // Dynamically load the Three.js script
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-        script.async = true;
-        document.body.appendChild(script);
-
-        script.onload = () => {
-            const THREE = window.THREE;
-            const currentMount = mountRef.current;
+        const currentMount = mountRef.current;
+        if (!currentMount) return;
 
             // --- Scene Setup ---
             const scene = new THREE.Scene();
@@ -138,7 +132,7 @@ export const SymmetryEngine = () => {
             scene.add(plane);
 
             // --- Mouse Interaction ---
-            const handleMouseMove = (event) => {
+            const handleMouseMove = (event: MouseEvent) => {
                 material.uniforms.u_mouse.value.x = (event.clientX / window.innerWidth) - 0.5;
                 material.uniforms.u_mouse.y = (event.clientY / window.innerHeight) - 0.5;
             };
@@ -155,14 +149,11 @@ export const SymmetryEngine = () => {
             
             return () => {
                 window.removeEventListener('mousemove', handleMouseMove);
+                if (currentMount && renderer.domElement.parentNode === currentMount) {
+                    currentMount.removeChild(renderer.domElement);
+                }
+                renderer.dispose();
             };
-        };
-
-        return () => {
-            if (script && script.parentNode) {
-                document.body.removeChild(script);
-            }
-        }
     }, []);
 
     return (
