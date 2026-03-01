@@ -134,7 +134,7 @@ export const SymmetryEngine = () => {
             // --- Mouse Interaction ---
             const handleMouseMove = (event: MouseEvent) => {
                 material.uniforms.u_mouse.value.x = (event.clientX / window.innerWidth) - 0.5;
-                material.uniforms.u_mouse.y = (event.clientY / window.innerHeight) - 0.5;
+                material.uniforms.u_mouse.value.y = (event.clientY / window.innerHeight) - 0.5;
             };
             window.addEventListener('mousemove', handleMouseMove);
 
