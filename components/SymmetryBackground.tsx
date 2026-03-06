@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Background-only version of the symmetry engine
 export const SymmetryBackground = () => {
     const mountRef = useRef<HTMLDivElement>(null);
+    const [isMobile] = useState(() => typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
 
     useEffect(() => {
-        if (typeof window === 'undefined') return;
+        // Skip heavy WebGL rendering on mobile devices
+        if (typeof window === 'undefined' || isMobile) return;
         
         // Dynamically load the Three.js script
         const script = document.createElement('script');
@@ -156,7 +158,30 @@ export const SymmetryBackground = () => {
                 document.body.removeChild(script);
             }
         };
-    }, []);
+    }, [isMobile]);
+
+    // Return a simple animated gradient on mobile for better performance
+    if (isMobile) {
+        return (
+            <div 
+                className="absolute inset-0 w-full h-full"
+                style={{ 
+                    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 25%, #0f3460 50%, #16213e 75%, #1a1a2e 100%)',
+                    backgroundSize: '400% 400%',
+                    animation: 'gradientShift 15s ease infinite',
+                    pointerEvents: 'none',
+                    opacity: 0.6
+                }}
+            >
+                <style jsx>{`
+                    @keyframes gradientShift {
+                        0%, 100% { background-position: 0% 50%; }
+                        50% { background-position: 100% 50%; }
+                    }
+                `}</style>
+            </div>
+        );
+    }
 
     return (
         <div 

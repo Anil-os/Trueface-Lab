@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { FaceLandmarks } from '@/lib/faceMath';
 
 interface FaceMeshCanvasProps {
@@ -17,12 +17,13 @@ export default function FaceMeshCanvas({
   showMesh = true 
 }: FaceMeshCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isMobile] = useState(() => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
     if (!ctx) return;
 
     // Clear canvas
@@ -30,45 +31,30 @@ export default function FaceMeshCanvas({
 
     if (!landmarks || !showMesh) return;
 
-    // Draw landmarks
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
-    ctx.lineWidth = 1;
-
-    // Draw all landmark points
-    landmarks.forEach((landmark) => {
-      const x = landmark.x * width;
-      const y = landmark.y * height;
-      
-      ctx.beginPath();
-      ctx.arc(x, y, 1.5, 0, 2 * Math.PI);
-      ctx.fill();
-    });
-
-    // Draw key measurement lines
-    if (landmarks.length >= 468) {
-      ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+    // Simplified rendering on mobile for better performance
+    if (isMobile) {
+      // Only draw key points and lines on mobile
+      ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
       ctx.lineWidth = 2;
 
-      // Face width line (234 to 454)
-      drawLine(ctx, landmarks[234], landmarks[454], width, height);
-      
-      // Face height line (10 to 152)
-      drawLine(ctx, landmarks[10], landmarks[152], width, height);
-      
-      // Eye distance line (33 to 263)
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
-      drawLine(ctx, landmarks[33], landmarks[263], width, height);
-      
-      // Highlight key facial points
+      // Draw key measurement lines only
+      if (landmarks.length >= 468) {
+        // Face width line (234 to 454)
+        drawLine(ctx, landmarks[234], landmarks[454], width, height);
+        
+        // Face height line (10 to 152)
+        drawLine(ctx, landmarks[10], landmarks[152], width, height);
+        
+        // Eye distance line (33 to 263)
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
+        drawLine(ctx, landmarks[33], landmarks[263], width, height);
+      }
+
+      // Highlight key facial points only
       const keyPoints = [
-        { index: 10, color: 'rgba(255, 0, 0, 0.8)', label: 'Top' },
-        { index: 152, color: 'rgba(255, 0, 0, 0.8)', label: 'Chin' },
-        { index: 234, color: 'rgba(255, 0, 255, 0.8)', label: 'L' },
-        { index: 454, color: 'rgba(255, 0, 255, 0.8)', label: 'R' },
-        { index: 1, color: 'rgba(0, 255, 255, 0.8)', label: 'Nose' },
-        { index: 33, color: 'rgba(255, 255, 0, 0.8)', label: 'LE' },
-        { index: 263, color: 'rgba(255, 255, 0, 0.8)', label: 'RE' },
+        { index: 10, color: 'rgba(255, 0, 0, 0.9)', size: 5 },
+        { index: 152, color: 'rgba(255, 0, 0, 0.9)', size: 5 },
+        { index: 1, color: 'rgba(0, 255, 255, 0.9)', size: 5 },
       ];
 
       keyPoints.forEach(point => {
@@ -77,33 +63,86 @@ export default function FaceMeshCanvas({
         
         ctx.fillStyle = point.color;
         ctx.beginPath();
-        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.arc(x, y, point.size, 0, 2 * Math.PI);
         ctx.fill();
-        
-        // Draw label
-        ctx.fillStyle = 'white';
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillText(point.label, x + 6, y - 6);
       });
-    }
-
-    // Draw face contour connections
-    if (landmarks.length >= 468) {
-      ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+    } else {
+      // Full rendering on desktop
+      // Draw landmarks
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.6)';
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
       ctx.lineWidth = 1;
-      
-      // Face oval (simplified - connecting key contour points)
-      const faceOval = [
-        10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
-        397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-        172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10
-      ];
-      
-      for (let i = 0; i < faceOval.length - 1; i++) {
-        drawLine(ctx, landmarks[faceOval[i]], landmarks[faceOval[i + 1]], width, height);
+
+      // Draw all landmark points
+      landmarks.forEach((landmark) => {
+        const x = landmark.x * width;
+        const y = landmark.y * height;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, 2 * Math.PI);
+        ctx.fill();
+      });
+
+      // Draw key measurement lines
+      if (landmarks.length >= 468) {
+        ctx.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+        ctx.lineWidth = 2;
+
+        // Face width line (234 to 454)
+        drawLine(ctx, landmarks[234], landmarks[454], width, height);
+        
+        // Face height line (10 to 152)
+        drawLine(ctx, landmarks[10], landmarks[152], width, height);
+        
+        // Eye distance line (33 to 263)
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)';
+        drawLine(ctx, landmarks[33], landmarks[263], width, height);
+        
+        // Highlight key facial points
+        const keyPoints = [
+          { index: 10, color: 'rgba(255, 0, 0, 0.8)', label: 'Top' },
+          { index: 152, color: 'rgba(255, 0, 0, 0.8)', label: 'Chin' },
+          { index: 234, color: 'rgba(255, 0, 255, 0.8)', label: 'L' },
+          { index: 454, color: 'rgba(255, 0, 255, 0.8)', label: 'R' },
+          { index: 1, color: 'rgba(0, 255, 255, 0.8)', label: 'Nose' },
+          { index: 33, color: 'rgba(255, 255, 0, 0.8)', label: 'LE' },
+          { index: 263, color: 'rgba(255, 255, 0, 0.8)', label: 'RE' },
+        ];
+
+        keyPoints.forEach(point => {
+          const x = landmarks[point.index].x * width;
+          const y = landmarks[point.index].y * height;
+          
+          ctx.fillStyle = point.color;
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.fill();
+          
+          // Draw label
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillText(point.label, x + 6, y - 6);
+        });
+      }
+
+      // Draw face contour connections
+      if (landmarks.length >= 468) {
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        
+        // Face oval (simplified - connecting key contour points)
+        const faceOval = [
+          10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+          397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+          172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10
+        ];
+        
+        for (let i = 0; i < faceOval.length - 1; i++) {
+          drawLine(ctx, landmarks[faceOval[i]], landmarks[faceOval[i + 1]], width, height);
+        }
       }
     }
-  }, [landmarks, width, height, showMesh]);
+  }, [landmarks, width, height, showMesh, isMobile]);
 
   return (
     <canvas

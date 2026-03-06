@@ -29,6 +29,8 @@ export default function ScanPage() {
   
   const faceMeshRef = useRef<any>(null);
   const animationFrameRef = useRef<number>();
+  const lastFrameTimeRef = useRef<number>(0);
+  const [isMobile] = useState(() => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
 
   // Load MediaPipe scripts
   useEffect(() => {
@@ -85,18 +87,24 @@ export default function ScanPage() {
           }
         });
 
+        // Use lighter settings on mobile for better performance
         faceMesh.setOptions({
           maxNumFaces: 1,
-          refineLandmarks: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
+          refineLandmarks: isMobile ? false : true,
+          minDetectionConfidence: isMobile ? 0.6 : 0.5,
+          minTrackingConfidence: isMobile ? 0.6 : 0.5
         });
 
         faceMesh.onResults(onFaceMeshResults);
 
+        // Frame throttling for better performance
+        const frameInterval = isMobile ? 100 : 50; // Process every 100ms on mobile, 50ms on desktop
+        
         const camera = new window.Camera(videoElement, {
           onFrame: async () => {
-            if (faceMeshRef.current) {
+            const now = Date.now();
+            if (faceMeshRef.current && (now - lastFrameTimeRef.current) >= frameInterval) {
+              lastFrameTimeRef.current = now;
               await faceMesh.send({ image: videoElement });
             }
           },

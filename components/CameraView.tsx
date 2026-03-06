@@ -20,13 +20,17 @@ export default function CameraView({ onVideoReady, onError }: CameraViewProps) {
         setIsLoading(true);
         setPermissionDenied(false);
 
+        // Detect mobile device for optimized settings
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
         // Request camera access with optimal settings for face detection
+        // Use lower resolution on mobile for better performance
         const constraints = {
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: isMobile ? 480 : 640 },
+            height: { ideal: isMobile ? 360 : 480 },
             facingMode: 'user',
-            frameRate: { ideal: 30 }
+            frameRate: { ideal: isMobile ? 24 : 30, max: 30 }
           },
           audio: false
         };
