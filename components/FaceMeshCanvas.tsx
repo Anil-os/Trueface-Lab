@@ -10,6 +10,9 @@ interface FaceMeshCanvasProps {
   showMesh?: boolean;
 }
 
+const MOBILE_KEY_POINTS = [10, 152, 1];
+const DESKTOP_KEY_POINTS = [10, 152, 234, 454, 1, 33, 263];
+
 export default function FaceMeshCanvas({ 
   width, 
   height, 
@@ -51,19 +54,14 @@ export default function FaceMeshCanvas({
       }
 
       // Highlight key facial points only
-      const keyPoints = [
-        { index: 10, color: 'rgba(255, 0, 0, 0.9)', size: 5 },
-        { index: 152, color: 'rgba(255, 0, 0, 0.9)', size: 5 },
-        { index: 1, color: 'rgba(0, 255, 255, 0.9)', size: 5 },
-      ];
-
-      keyPoints.forEach(point => {
-        const x = landmarks[point.index].x * width;
-        const y = landmarks[point.index].y * height;
+      MOBILE_KEY_POINTS.forEach((index) => {
+        if (!landmarks[index]) return;
+        const x = landmarks[index].x * width;
+        const y = landmarks[index].y * height;
         
-        ctx.fillStyle = point.color;
+        ctx.fillStyle = index === 1 ? 'rgba(0, 255, 255, 0.9)' : 'rgba(255, 0, 0, 0.9)';
         ctx.beginPath();
-        ctx.arc(x, y, point.size, 0, 2 * Math.PI);
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
         ctx.fill();
       });
     } else {
@@ -73,15 +71,16 @@ export default function FaceMeshCanvas({
       ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
       ctx.lineWidth = 1;
 
-      // Draw all landmark points
-      landmarks.forEach((landmark) => {
+      // Draw a reduced subset of points to keep desktop responsive.
+      for (let i = 0; i < landmarks.length; i += 2) {
+        const landmark = landmarks[i];
         const x = landmark.x * width;
         const y = landmark.y * height;
         
         ctx.beginPath();
-        ctx.arc(x, y, 1.5, 0, 2 * Math.PI);
+        ctx.arc(x, y, 1.2, 0, 2 * Math.PI);
         ctx.fill();
-      });
+      }
 
       // Draw key measurement lines
       if (landmarks.length >= 468) {
@@ -99,21 +98,21 @@ export default function FaceMeshCanvas({
         drawLine(ctx, landmarks[33], landmarks[263], width, height);
         
         // Highlight key facial points
-        const keyPoints = [
-          { index: 10, color: 'rgba(255, 0, 0, 0.8)', label: 'Top' },
-          { index: 152, color: 'rgba(255, 0, 0, 0.8)', label: 'Chin' },
-          { index: 234, color: 'rgba(255, 0, 255, 0.8)', label: 'L' },
-          { index: 454, color: 'rgba(255, 0, 255, 0.8)', label: 'R' },
-          { index: 1, color: 'rgba(0, 255, 255, 0.8)', label: 'Nose' },
-          { index: 33, color: 'rgba(255, 255, 0, 0.8)', label: 'LE' },
-          { index: 263, color: 'rgba(255, 255, 0, 0.8)', label: 'RE' },
-        ];
-
-        keyPoints.forEach(point => {
-          const x = landmarks[point.index].x * width;
-          const y = landmarks[point.index].y * height;
+        DESKTOP_KEY_POINTS.forEach((index) => {
+          if (!landmarks[index]) return;
+          const x = landmarks[index].x * width;
+          const y = landmarks[index].y * height;
           
-          ctx.fillStyle = point.color;
+          if (index === 10 || index === 152) {
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+          } else if (index === 234 || index === 454) {
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.8)';
+          } else if (index === 1) {
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
+          } else {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+          }
+
           ctx.beginPath();
           ctx.arc(x, y, 4, 0, 2 * Math.PI);
           ctx.fill();
@@ -121,7 +120,7 @@ export default function FaceMeshCanvas({
           // Draw label
           ctx.fillStyle = 'white';
           ctx.font = 'bold 10px sans-serif';
-          ctx.fillText(point.label, x + 6, y - 6);
+          ctx.fillText(index.toString(), x + 6, y - 6);
         });
       }
 

@@ -6,10 +6,18 @@ import React, { useEffect, useRef, useState } from 'react';
 export const SymmetryBackground = () => {
     const mountRef = useRef<HTMLDivElement>(null);
     const [isMobile] = useState(() => typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+    const [isLowPowerDevice] = useState(() => {
+        if (typeof window === 'undefined') return true;
+        const nav = navigator as Navigator & { deviceMemory?: number };
+        const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
+        const lowCores = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 4;
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+        return lowMemory || lowCores || reducedMotion;
+    });
 
     useEffect(() => {
         // Skip heavy WebGL rendering on mobile devices
-        if (typeof window === 'undefined' || isMobile) return;
+        if (typeof window === 'undefined' || isMobile || isLowPowerDevice) return;
         
         // Dynamically load the Three.js script
         const script = document.createElement('script');
@@ -17,7 +25,13 @@ export const SymmetryBackground = () => {
         script.async = true;
         document.body.appendChild(script);
 
+        let rafId = 0;
+        let disposed = false;
+        let resizeHandler: (() => void) | null = null;
+
         script.onload = () => {
+            if (disposed) return;
+
             const THREE = (window as any).THREE;
             const currentMount = mountRef.current;
             if (!currentMount) return;
@@ -26,6 +40,7 @@ export const SymmetryBackground = () => {
             const scene = new THREE.Scene();
             const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
             const renderer = new THREE.WebGLRenderer({ alpha: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
             renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
             currentMount.appendChild(renderer.domElement);
 
@@ -135,10 +150,26 @@ export const SymmetryBackground = () => {
             };
             window.addEventListener('mousemove', handleMouseMove);
 
+            resizeHandler = () => {
+                if (!mountRef.current) return;
+                const width = mountRef.current.clientWidth;
+                const height = mountRef.current.clientHeight;
+                renderer.setSize(width, height);
+                material.uniforms.u_resolution.value.set(width, height);
+            };
+            window.addEventListener('resize', resizeHandler);
+
             // --- Animation Loop ---
             const clock = new THREE.Clock();
+            let lastRenderTime = 0;
+            const targetInterval = 1000 / 30;
+
             const animate = () => {
-                requestAnimationFrame(animate);
+                rafId = requestAnimationFrame(animate);
+                const now = performance.now();
+                if (now - lastRenderTime < targetInterval) return;
+                lastRenderTime = now;
+
                 material.uniforms.u_time.value = clock.getElapsedTime();
                 renderer.render(scene, camera);
             };
@@ -146,22 +177,38 @@ export const SymmetryBackground = () => {
             
             // Cleanup
             return () => {
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                }
                 window.removeEventListener('mousemove', handleMouseMove);
+                if (resizeHandler) {
+                    window.removeEventListener('resize', resizeHandler);
+                }
                 if (currentMount && renderer.domElement) {
                     currentMount.removeChild(renderer.domElement);
                 }
+                planeGeometry.dispose();
+                material.dispose();
+                renderer.dispose();
             };
         };
 
         return () => {
+            disposed = true;
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
+            if (resizeHandler) {
+                window.removeEventListener('resize', resizeHandler);
+            }
             if (script && script.parentNode) {
                 document.body.removeChild(script);
             }
         };
-    }, [isMobile]);
+    }, [isMobile, isLowPowerDevice]);
 
     // Return a simple animated gradient on mobile for better performance
-    if (isMobile) {
+    if (isMobile || isLowPowerDevice) {
         return (
             <div 
                 className="absolute inset-0 w-full h-full"

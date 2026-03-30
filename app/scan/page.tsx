@@ -28,58 +28,116 @@ export default function ScanPage() {
   const [isCapturing, setIsCapturing] = useState(false);
   
   const faceMeshRef = useRef<any>(null);
-  const animationFrameRef = useRef<number>();
+  const initInProgressRef = useRef(false);
+  const isProcessingFrameRef = useRef(false);
   const lastFrameTimeRef = useRef<number>(0);
+  const lastUiUpdateRef = useRef<number>(0);
+  const lastScoreUpdateRef = useRef<number>(0);
+  const scoreCacheRef = useRef<HarmonyScore | null>(null);
   const [isMobile] = useState(() => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
 
   // Load MediaPipe scripts
   useEffect(() => {
+    let mounted = true;
+
+    const loadScript = (src: string) => {
+      return new Promise<void>((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+        if (existing) {
+          if ((existing as any).dataset.loaded === 'true') {
+            resolve();
+            return;
+          }
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.crossOrigin = 'anonymous';
+        script.async = true;
+        script.onload = () => {
+          (script as any).dataset.loaded = 'true';
+          resolve();
+        };
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.body.appendChild(script);
+      });
+    };
+
     const loadScripts = async () => {
       // Check if already loaded
       if (window.FaceMesh && window.Camera) {
-        setScriptsLoaded(true);
+        if (mounted) {
+          setScriptsLoaded(true);
+        }
         return;
       }
 
       try {
-        // Load FaceMesh script
-        const faceMeshScript = document.createElement('script');
-        faceMeshScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
-        faceMeshScript.crossOrigin = 'anonymous';
-        
-        // Load Camera Utils script
-        const cameraScript = document.createElement('script');
-        cameraScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
-        cameraScript.crossOrigin = 'anonymous';
+        // Load in parallel to reduce startup latency.
+        await Promise.all([
+          loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js'),
+          loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js'),
+        ]);
 
-        // Wait for scripts to load
-        await new Promise((resolve, reject) => {
-          faceMeshScript.onload = resolve;
-          faceMeshScript.onerror = reject;
-          document.body.appendChild(faceMeshScript);
-        });
-
-        await new Promise((resolve, reject) => {
-          cameraScript.onload = resolve;
-          cameraScript.onerror = reject;
-          document.body.appendChild(cameraScript);
-        });
-
-        setScriptsLoaded(true);
+        if (mounted) {
+          setScriptsLoaded(true);
+        }
       } catch (err) {
         console.error('Failed to load MediaPipe scripts:', err);
-        setError('Failed to load face detection library. Please refresh the page.');
+        if (mounted) {
+          setError('Failed to load face detection library. Please refresh the page.');
+        }
       }
     };
 
     loadScripts();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  // Handle FaceMesh results
+  const onFaceMeshResults = useCallback((results: any) => {
+    const now = Date.now();
+
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      const detectedLandmarks = results.multiFaceLandmarks[0];
+
+      // Update visual overlay at a separate cadence to avoid UI thrash.
+      const uiInterval = isMobile ? 120 : 66;
+      if ((now - lastUiUpdateRef.current) >= uiInterval) {
+        setLandmarks(detectedLandmarks);
+        lastUiUpdateRef.current = now;
+      }
+
+      setIsDetecting((prev) => (prev ? prev : true));
+
+      // Calculate harmony score
+      const scoreInterval = isMobile ? 250 : 180;
+      if ((now - lastScoreUpdateRef.current) >= scoreInterval || !scoreCacheRef.current) {
+        const score = calculateFacialHarmony(detectedLandmarks);
+        scoreCacheRef.current = score;
+        lastScoreUpdateRef.current = now;
+        setHarmonyScore(score);
+      }
+    } else {
+      setIsDetecting((prev) => (prev ? false : prev));
+    }
+  }, [isMobile]);
 
   // Initialize FaceMesh when video is ready
   useEffect(() => {
-    if (!videoElement || !scriptsLoaded || faceMeshRef.current) return;
+    if (!videoElement || !scriptsLoaded || faceMeshRef.current || initInProgressRef.current) return;
+
+    let cancelled = false;
 
     const initializeFaceMesh = async () => {
+      initInProgressRef.current = true;
+
       try {
         const faceMesh = new window.FaceMesh({
           locateFile: (file: string) => {
@@ -97,56 +155,59 @@ export default function ScanPage() {
 
         faceMesh.onResults(onFaceMeshResults);
 
-        // Frame throttling for better performance
-        const frameInterval = isMobile ? 100 : 50; // Process every 100ms on mobile, 50ms on desktop
+        // Frame throttling for better performance.
+        const frameInterval = isMobile ? 120 : 66; // ~8 FPS mobile, ~15 FPS desktop
+        const cameraWidth = videoElement.videoWidth || 640;
+        const cameraHeight = videoElement.videoHeight || 480;
         
         const camera = new window.Camera(videoElement, {
           onFrame: async () => {
+            if (cancelled || !faceMeshRef.current || isProcessingFrameRef.current) return;
+
             const now = Date.now();
-            if (faceMeshRef.current && (now - lastFrameTimeRef.current) >= frameInterval) {
+            if ((now - lastFrameTimeRef.current) >= frameInterval) {
               lastFrameTimeRef.current = now;
-              await faceMesh.send({ image: videoElement });
+              isProcessingFrameRef.current = true;
+              try {
+                await faceMesh.send({ image: videoElement });
+              } finally {
+                isProcessingFrameRef.current = false;
+              }
             }
           },
-          width: canvasSize.width,
-          height: canvasSize.height
+          width: cameraWidth,
+          height: cameraHeight
         });
 
         await camera.start();
+
+        if (cancelled) {
+          camera.stop();
+          return;
+        }
+
         faceMeshRef.current = { faceMesh, camera };
       } catch (err) {
         console.error('FaceMesh initialization error:', err);
-        setError('Failed to initialize face detection. Please refresh the page.');
+        if (!cancelled) {
+          setError('Failed to initialize face detection. Please refresh the page.');
+        }
+      } finally {
+        initInProgressRef.current = false;
       }
     };
 
     initializeFaceMesh();
 
     return () => {
+      cancelled = true;
       if (faceMeshRef.current) {
         faceMeshRef.current.camera?.stop();
         faceMeshRef.current = null;
       }
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      isProcessingFrameRef.current = false;
     };
-  }, [videoElement, scriptsLoaded, canvasSize.width, canvasSize.height]);
-
-  // Handle FaceMesh results
-  const onFaceMeshResults = useCallback((results: any) => {
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-      const detectedLandmarks = results.multiFaceLandmarks[0];
-      setLandmarks(detectedLandmarks);
-      setIsDetecting(true);
-
-      // Calculate harmony score
-      const score = calculateFacialHarmony(detectedLandmarks);
-      setHarmonyScore(score);
-    } else {
-      setIsDetecting(false);
-    }
-  }, []);
+  }, [videoElement, scriptsLoaded, isMobile, onFaceMeshResults]);
 
   // Handle video ready
   const handleVideoReady = useCallback((video: HTMLVideoElement) => {

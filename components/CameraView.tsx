@@ -14,43 +14,78 @@ export default function CameraView({ onVideoReady, onError }: CameraViewProps) {
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let mounted = true;
+    const videoElement = videoRef.current;
 
     async function setupCamera() {
       try {
         setIsLoading(true);
         setPermissionDenied(false);
 
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('MediaDevices API is not supported in this browser.');
+        }
+
         // Detect mobile device for optimized settings
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Request camera access with optimal settings for face detection
-        // Use lower resolution on mobile for better performance
-        const constraints = {
+        // Start with optimized constraints and gracefully fall back.
+        const primaryConstraints: MediaStreamConstraints = {
           video: {
             width: { ideal: isMobile ? 480 : 640 },
             height: { ideal: isMobile ? 360 : 480 },
-            facingMode: 'user',
+            facingMode: { ideal: 'user' },
             frameRate: { ideal: isMobile ? 24 : 30, max: 30 }
           },
           audio: false
         };
 
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const fallbackConstraints: MediaStreamConstraints[] = [
+          {
+            video: {
+              facingMode: { ideal: 'user' },
+              width: { ideal: 320 },
+              height: { ideal: 240 },
+              frameRate: { ideal: 20, max: 24 }
+            },
+            audio: false
+          },
+          { video: true, audio: false }
+        ];
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(primaryConstraints);
+        } catch {
+          for (const constraints of fallbackConstraints) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia(constraints);
+              break;
+            } catch {
+              // Continue trying next fallback profile.
+            }
+          }
+        }
+
+        if (!stream) {
+          throw new Error('Unable to initialize camera stream with available constraints.');
+        }
+
+        if (videoElement) {
+          videoElement.srcObject = stream;
           
           // Wait for video metadata to be loaded
-          videoRef.current.onloadedmetadata = () => {
-            if (videoRef.current) {
-              videoRef.current.play();
+          videoElement.onloadedmetadata = () => {
+            if (mounted) {
+              videoElement.play();
               setIsLoading(false);
-              onVideoReady(videoRef.current);
+              onVideoReady(videoElement);
             }
           };
         }
       } catch (err) {
         console.error('Camera access error:', err);
+        if (!mounted) return;
+
         setIsLoading(false);
         setPermissionDenied(true);
         
@@ -59,6 +94,8 @@ export default function CameraView({ onVideoReady, onError }: CameraViewProps) {
             onError('Camera permission denied. Please allow camera access to use this feature.');
           } else if (err.name === 'NotFoundError') {
             onError('No camera found. Please connect a camera to use this feature.');
+          } else if (err.message.includes('not supported')) {
+            onError('This browser does not support camera access. Please use a modern browser.');
           } else {
             onError('Failed to access camera. Please check your browser settings.');
           }
@@ -70,11 +107,13 @@ export default function CameraView({ onVideoReady, onError }: CameraViewProps) {
 
     // Cleanup function
     return () => {
+      mounted = false;
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (videoElement) {
+        videoElement.onloadedmetadata = null;
+        videoElement.srcObject = null;
       }
     };
   }, [onVideoReady, onError]);

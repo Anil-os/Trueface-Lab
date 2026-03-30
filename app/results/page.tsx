@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import NextImage from 'next/image';
 import { useRouter } from 'next/navigation';
 import ScorePanel from '@/components/ScorePanel';
 import FaceMeshCanvas from '@/components/FaceMeshCanvas';
@@ -137,10 +138,13 @@ export default function ResultsPage() {
           {/* Captured Image - Takes 2 columns on large screens */}
           <div className="lg:col-span-2">
             <div className="relative aspect-video bg-gray-900 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl">
-              <img 
-                src={capturedData.image} 
-                alt="Captured face analysis" 
-                className="w-full h-full object-cover"
+              <NextImage
+                src={capturedData.image}
+                alt="Captured face analysis"
+                fill
+                unoptimized
+                sizes="(max-width: 1024px) 100vw, 66vw"
+                className="object-cover"
               />
               
               {/* Face Mesh Overlay */}
